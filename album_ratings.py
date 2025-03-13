@@ -29,7 +29,7 @@ def get_all_albums() -> List[Dict[str, str]]:
         data = response.json()
         if "MediaContainer" in data and "Metadata" in data["MediaContainer"]:
             for album in data["MediaContainer"]["Metadata"]:
-                albums.append({"key": album["ratingKey"], "title": album["title"], "artist": album["parentTitle"]})
+                albums.append({"key": album["ratingKey"], "title": album["title"], "artist": album["parentTitle"], "userRating": album.get("userRating")})
 
     return albums
 
@@ -203,6 +203,14 @@ def main() -> None:
 
     print("Processing albums...")
     for i, album in enumerate(albums, 1):
+        # Skip if album already has a rating
+        if album.get("userRating") is not None:
+            result = create_result_dict(album, None, "Album already rated")
+            results.append(result)
+            stats["Skipped"] = stats.get("Skipped", 0) + 1
+            update_progress(i, len(albums), stats)
+            continue
+
         tracks = get_album_tracks(album["key"])
         rating, skip_reason = calculate_album_rating(tracks)
 
