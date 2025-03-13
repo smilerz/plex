@@ -1,0 +1,3 @@
+config.ini
+*.csv
+plex_tools.egg-info/*

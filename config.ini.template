@@ -1,0 +1,4 @@
+[plex]
+url = http://your-plex-server:32400
+token = your-plex-token           #Plex API token.  See https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/ for information on how to find your token'
+music_library_id = your-music-library-id
