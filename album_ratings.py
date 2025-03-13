@@ -179,74 +179,58 @@ def round_half_up(n: float, decimals: int = 0) -> float:
     return math.floor(n * multiplier + 0.5) / multiplier
 
 
-# Main process
-def main() -> None:
-    # Get execution mode
+def get_mode() -> str:
+    """Get execution mode from user input."""
     while True:
         mode = input("Select mode ([p]review/[u]pdate): ").lower().strip()
         if mode in ["preview", "update", "p", "u"]:
-            # Convert single letter inputs to full mode name
-            if mode == "p":
-                mode = "preview"
-            elif mode == "u":
-                mode = "update"
-            break
+            return "preview" if mode in ["preview", "p"] else "update"
         print("Invalid mode. Please enter 'preview' (p) or 'update' (u)")
 
-    print(f"\nRunning in {mode.upper()} mode")
-    print("Fetching albums from Plex...")
-    albums = get_all_albums()
-    print(f"Found {len(albums)} albums")
 
-    results = []
-    stats = {"Preview": 0, "Success": 0, "Failed": 0, "Skipped": 0}
+def process_album(album: Dict[str, Any], mode: str, stats: Dict[str, int]) -> Dict[str, Any]:
+    """Process a single album and return its result."""
+    if album.get("userRating") is not None:
+        result = create_result_dict(album, None, "Album already rated")
+        stats["Skipped"] = stats.get("Skipped", 0) + 1
+        return result
 
-    print("Processing albums...")
-    for i, album in enumerate(albums, 1):
-        # Skip if album already has a rating
-        if album.get("userRating") is not None:
-            result = create_result_dict(album, None, "Album already rated")
-            results.append(result)
-            stats["Skipped"] = stats.get("Skipped", 0) + 1
-            update_progress(i, len(albums), stats)
-            continue
+    tracks = get_album_tracks(album["key"])
+    rating, skip_reason = calculate_album_rating(tracks)
+    result = create_result_dict(album, rating, skip_reason)
 
-        tracks = get_album_tracks(album["key"])
-        rating, skip_reason = calculate_album_rating(tracks)
+    if rating is not None:
+        filtered_tracks = get_filtered_tracks(tracks)
+        filtered_ratings, filtered_avg, lowest, highest = get_track_stats(filtered_tracks)
 
-        result = create_result_dict(album, rating, skip_reason)
+        if filtered_avg is not None:
+            result.update(
+                {
+                    "Rating Adjustment": round_half_up(abs(rating - filtered_avg), 2),
+                    "Avg Rating": round_half_up(filtered_avg, 2),
+                    "Lowest Track": lowest,
+                    "Highest Track": highest,
+                }
+            )
 
-        if rating is not None:
-            filtered_tracks = get_filtered_tracks(tracks)
-            filtered_ratings, filtered_avg, lowest, highest = get_track_stats(filtered_tracks)
+        if mode == "update":
+            success = update_album_rating(album["key"], rating)
+            result["Status"] = "Success" if success else "Failed"
 
-            if filtered_avg is not None:
-                result.update(
-                    {
-                        "Rating Adjustment": round_half_up(abs(rating - filtered_avg), 2),
-                        "Avg Rating": round_half_up(filtered_avg, 2),
-                        "Lowest Track": lowest,
-                        "Highest Track": highest,
-                    }
-                )
+    stats[result["Status"]] = stats.get(result["Status"], 0) + 1
+    return result
 
-            if mode == "update":
-                success = update_album_rating(album["key"], rating)
-                result["Status"] = "Success" if success else "Failed"
 
-        results.append(result)
-        stats[result["Status"]] = stats.get(result["Status"], 0) + 1
-        update_progress(i, len(albums), stats)
-        time.sleep(0.1)
-
-    print("\nDone!")
-
-    # Save results
+def save_results(results: List[Dict[str, Any]], mode: str) -> str:
+    """Save results to CSV and return output filename."""
     results_df = pd.DataFrame(results)
     output_file = f"plex_album_ratings_{mode}_{time.strftime('%Y%m%d_%H%M%S')}.csv"
     results_df.to_csv(output_file, index=False)
+    return output_file
 
-    # Summary
+
+def print_summary(results: List[Dict[str, Any]], mode: str) -> None:
+    """Print processing summary."""
     total = len(results)
     if mode == "update":
         updated = sum(1 for r in results if r["Status"] == "Success")
@@ -267,6 +251,29 @@ def main() -> None:
         print(f"Ratings calculated: {processed}")
         print(f"Skipped: {skipped}")
 
+
+def main() -> None:
+    mode = get_mode()
+    print(f"\nRunning in {mode.upper()} mode")
+
+    print("Fetching albums from Plex...")
+    albums = get_all_albums()
+    print(f"Found {len(albums)} albums")
+
+    results = []
+    stats = {"Preview": 0, "Success": 0, "Failed": 0, "Skipped": 0}
+
+    print("Processing albums...")
+    for i, album in enumerate(albums, 1):
+        result = process_album(album, mode, stats)
+        results.append(result)
+        update_progress(i, len(albums), stats)
+        time.sleep(0.1)
+
+    print("\nDone!")
+
+    output_file = save_results(results, mode)
+    print_summary(results, mode)
     print(f"Results saved to {output_file}")
 
 
